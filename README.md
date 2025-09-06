@@ -1,56 +1,38 @@
-# PathPlanning
-A Robotics Path Planning Simulator - Made by Panth, Nauman, Abheek and Rajat
+# What?
 
-# I. Core Functional Requirements (What the path planner MUST do):
+A ROS 2 path-planning and control demo for turtlesim that builds a Probabilistic Roadmap, finds a shortest path with Dijkstra’s algorithm, and follows it using a Pure Pursuit controller. Obstacles are axis-aligned boxes, while collisions are checked with a simple line-segment test. Runs fully in `rclpy` with turtles penning the obstacle boxes and flags. [ROS Documentation](https://docs.ros.org/en/foxy/Tutorials/Beginner-CLI-Tools/Introducing-Turtlesim/Introducing-Turtlesim.html)
 
-Goal Specification:
+# How?
 
-Start Point: The path planner must accept a defined starting position (e.g., coordinates, node in a graph).
-End Point: The path planner must accept a defined target position or region.
+- **Sampling & Graph Creation**: Randomly sample free points (nodes) in the grid. Connect each node to its $k$ nearest neighbors when the straight line is collision-free. Edge weight is Euclidean distance given below. This is a classic [Probabilistic Roadmap](https://www.cs.cmu.edu/~motionplanning/papers/sbp_papers/PRM/prmbasic_01.pdf) idea to build a roadmap in free space and query it for a path.
 
-Static Obstacles: Identify and avoid fixed obstacles in the environment.
-Dynamic Obstacles: Handle moving obstacles (e.g., other robots, people, vehicles). This introduces requirements for prediction and reactive planning.
+$$
+ \space d(a,b)=\sqrt{(ax−bx)^2+(ay−by)^2}
+$$
 
-Feasibility: Generate a path that is kinematically and dynamically feasible for the robot/agent. This means considering its turning radius, maximum velocity, acceleration limits, etc.
-Collision-Free: The generated path must not intersect with any obstacles.
-Completeness: The planner should find a path if one exists.
-Smoothness: Generate a path that is continuous and differentiable to allow for smooth robot motion.
-Connectivity: The path must be a continuous sequence of traversable points/states from start to goal.
-Environment Representation:
+- **Shortest Path Finding:** Run [Dijkstra’s algorithm](https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm) on the roadmap from start to goal using a **min-heap priority queue**, maintaining `dist[v]` and `prev[v]` until the goal is popped.
 
-Map Input: The planner must be able to ingest and interpret information about the environment (e.g., occupancy grid, point cloud, graph, CAD model).
-State Space Definition: Clearly define the possible states of the robot/agent (e.g., (x, y), (x, y, theta), (x, y, theta, velocity)).
-
-Path Representation: Output the planned path in a usable format (e.g., sequence of waypoints, control commands, trajectory).
-Path Metadata: Provide information about the path (e.g., length, estimated time, cost).
-Failure Notification: Clearly indicate if no path can be found.
-
-
-# II. Performance Requirements (How well the path planner performs):
-
-Computational Efficiency (Time Complexity):
-
-Planning Time: The time taken to compute a path should be within acceptable limits for the application (e.g., real-time for dynamic environments, offline for static environments).
-Scalability: Performance should degrade gracefully as the environment size or complexity increases.
-
-Path Length: Minimize the total distance traveled.
-Time to Traverse: Minimize the estimated time to reach the goal.
-Energy Consumption: Minimize energy expended.
-Smoothness/Jerk: Minimize changes in acceleration to reduce wear and tear or improve comfort.
-Safety Margin: Maximize distance from obstacles.
-Handling Sensor Noise/Uncertainty: Ability to function effectively despite imperfect sensor data.
-Environmental Changes: Adapt to minor changes in the environment (e.g., new small obstacles).
-Failure Recovery: How the system behaves if it deviates from the planned path.
-Memory Usage: The amount of memory required to store the map, search tree, and path should be manageable for the target hardware.
-
-# III. Non-Functional Requirements (Constraints and qualities of the system):
-
-Maintainability:
-
-Code Structure: Well-organized, modular, and easy to understand code.
-
-API Design: Intuitive and well-defined interfaces for integration with other systems.
-Configuration: Easy to configure parameters (e.g., cost weights, resolution).
-Scalability (in terms of environment/robot complexity): Can the planner handle larger maps, more dimensions (e.g., 3D), or more complex robot kinematics?
-Portability:Ability to run on different operating systems or hardware platforms.
-Real-Time Capabilities:Guaranteed response times and execution deadlines.
+- **Collision Checks**: A path segment $p \rightarrow q$ intersects a rectangle if an endpoint is inside or it intersects any of the 4 edges. Segment-segment intersection uses the orientation test:
+    
+    Two segments intersect if the orientations of each w.r.t the other straddle $(o_1o_2 < 0 \space and \space o_3o_4 < 0)$. 
+    
+- **Pure Pursuit - Path Following:** Choose a lookahead distance $L_d$ along the line; shrink $L_d$ if the line from the robot to that point would cross any obstacle.
+    
+    Express the lookahead point in the robot frame by rotating by $-\theta$:
+    
+    $$
+    x_ld = \cos(-\theta)\Delta x - \sin(-\theta)\Delta y,
+    
+    \newline
+    y_ld = \sin(-\theta)\Delta x + \cos(-\theta)\Delta y.
+    $$
+    
+    Curvature command (curvature of the circular arc that would pass through the turtle and the lookahead point) from the geometry is found to be the following: 
+    
+    $$
+    \kappa = \frac{2 y_ld}{L_d^2}
+    $$
+    
+    These commands get translated into steering commands for the turtle
+    
+- **ROS2/ Turtlesim:** Subscribes to `/turtle1/pose`, publishes to `/turtle1/cmd_vel`, and uses `Spawn`, `SetPen`, `TeleportAbsolute` services to draw obstacles/flags and position the turtle.
